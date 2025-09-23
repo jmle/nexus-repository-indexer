@@ -16,7 +16,7 @@ import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
-import org.apache.lucene.store.SimpleFSDirectory;
+import org.apache.lucene.store.FSDirectory;
 import org.jboss.windup.maven.nexusindexer.ArtifactFilter;
 
 /**
@@ -36,7 +36,7 @@ public class TextFileToLucene7Converter
     private final ArtifactFilter filter;
     private final File indexDir;
     private final IndexWriter indexWriter;
-    private SimpleFSDirectory luceneOutputDirResource;
+    private FSDirectory luceneOutputDirResource;
 
     public static void main(String[] args) throws Exception
     {
@@ -84,7 +84,7 @@ public class TextFileToLucene7Converter
             FileUtils.write(markerFile, "This file is searched by Windup to locate the Lucene index with repository metadata.");
 
             // Create our local result index.
-            this.luceneOutputDirResource = new SimpleFSDirectory(indexDir.toPath());
+            this.luceneOutputDirResource = FSDirectory.open(indexDir.toPath());
             StandardAnalyzer standardAnalyzer = new StandardAnalyzer();
             IndexWriterConfig config = new IndexWriterConfig(standardAnalyzer);
             this.indexWriter = new IndexWriter(luceneOutputDirResource, config);

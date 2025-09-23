@@ -22,9 +22,15 @@
 
         <!-- Test dependencies -->
         <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <version>4.12</version>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.1</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.vintage</groupId>
+            <artifactId>junit-vintage-engine</artifactId>
+            <version>5.10.1</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -38,17 +44,21 @@
             <build>
                 <plugins>
                     <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-assembly-plugin</artifactId>
+                        <!-- Version inherited from parent -->
                         <executions>
                             <!-- Bundle the resulting indexes and text files to an artifact. -->
                             <execution>
                                 <id>bundle-mappings</id>
-                                <phase>prepare-package</phase>
+                                <phase>none</phase>
                                 <goals>
                                     <goal>single</goal>
                                 </goals>
                                 <configuration>
-                                    <descriptor>src/main/assembly/bundle-metadata.xml</descriptor>
+                                    <descriptors>
+                                        <descriptor>src/main/assembly/bundle-metadata.xml</descriptor>
+                                    </descriptors>
                                     <appendAssemblyId>false</appendAssemblyId>
                                 </configuration>
                             </execution>
@@ -57,30 +67,40 @@
                     <plugin>
                         <groupId>org.codehaus.mojo</groupId>
                         <artifactId>exec-maven-plugin</artifactId>
-                        <version>1.4.0</version>
+                        <!-- Version inherited from parent -->
                         <executions>
                             <!-- Generate the indexes. -->
-                            <execution>
-                                <id>central</id>
-                                <phase>compile</phase>
-                                <goals>
-                                    <goal>java</goal>
-                                </goals>
-                                <configuration>
-                                    <mainClass>org.jboss.windup.maven.nexusindexer.GenerateMetadataFile</mainClass>
-                                    <cleanupDaemonThreads>false</cleanupDaemonThreads>
-                                    <arguments>
-                                        <argument>text</argument>
-                                        <argument>central</argument>
-                                        <argument>https://repo1.maven.org/maven2</argument>
-                                        <argument>${project.build.directory}</argument>
-                                        <argument>${user.home}/.windup/cache/nexus-indexes</argument>
-                                    </arguments>
-                                </configuration>
-                            </execution>
+<!--                            <execution>-->
+<!--                                <id>central</id>-->
+<!--                                <phase>none</phase>-->
+<!--                                <goals>-->
+<!--                                    <goal>java</goal>-->
+<!--                                </goals>-->
+<!--                                <configuration>-->
+<!--                                    <mainClass>org.jboss.windup.maven.nexusindexer.GenerateMetadataFile</mainClass>-->
+<!--                                    <cleanupDaemonThreads>false</cleanupDaemonThreads>-->
+<!--                                    <options>-->
+<!--                                        <option>&#45;&#45;add-opens=java.base/java.lang=ALL-UNNAMED</option>-->
+<!--                                        <option>&#45;&#45;add-opens=java.base/java.lang.reflect=ALL-UNNAMED</option>-->
+<!--                                        <option>&#45;&#45;add-opens=java.base/java.util=ALL-UNNAMED</option>-->
+<!--                                        <option>&#45;&#45;add-opens=java.base/java.util.concurrent=ALL-UNNAMED</option>-->
+<!--                                        <option>&#45;&#45;add-opens=java.base/java.text=ALL-UNNAMED</option>-->
+<!--                                        <option>&#45;&#45;add-opens=java.base/java.time=ALL-UNNAMED</option>-->
+<!--                                        <option>&#45;&#45;add-opens=java.base/sun.nio.ch=ALL-UNNAMED</option>-->
+<!--                                        <option>&#45;&#45;add-opens=java.base/sun.util.calendar=ALL-UNNAMED</option>-->
+<!--                                    </options>-->
+<!--                                    <arguments>-->
+<!--                                        <argument>text</argument>-->
+<!--                                        <argument>central</argument>-->
+<!--                                        <argument>https://repo1.maven.org/maven2</argument>-->
+<!--                                        <argument>${project.build.directory}</argument>-->
+<!--                                        <argument>${user.home}/.windup/cache/nexus-indexes</argument>-->
+<!--                                    </arguments>-->
+<!--                                </configuration>-->
+<!--                            </execution>-->
                             <execution>
                                 <id>jboss</id>
-                                <phase>compile</phase>
+                                <phase>none</phase>
                                 <goals>
                                     <goal>java</goal>
                                 </goals>
@@ -101,7 +121,7 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-failsafe-plugin</artifactId>
-                        <version>2.19.1</version>
+                        <!-- Version inherited from parent -->
                         <executions>
                             <execution>
                                 <goals>
@@ -121,7 +141,7 @@
                     <plugin>
                         <groupId>org.codehaus.mojo</groupId>
                         <artifactId>exec-maven-plugin</artifactId>
-                        <version>1.4.0</version>
+                        <!-- Version inherited from parent -->
                         <executions>
                             <!-- Update the index -->
                             <execution>
@@ -133,6 +153,16 @@
                                 <configuration>
                                     <mainClass>org.jboss.windup.maven.nexusindexer.UpdateNexusIndex</mainClass>
                                     <cleanupDaemonThreads>false</cleanupDaemonThreads>
+                                    <options>
+                                        <option>--add-opens=java.base/java.lang=ALL-UNNAMED</option>
+                                        <option>--add-opens=java.base/java.lang.reflect=ALL-UNNAMED</option>
+                                        <option>--add-opens=java.base/java.util=ALL-UNNAMED</option>
+                                        <option>--add-opens=java.base/java.util.concurrent=ALL-UNNAMED</option>
+                                        <option>--add-opens=java.base/java.text=ALL-UNNAMED</option>
+                                        <option>--add-opens=java.base/java.time=ALL-UNNAMED</option>
+                                        <option>--add-opens=java.base/sun.nio.ch=ALL-UNNAMED</option>
+                                        <option>--add-opens=java.base/sun.util.calendar=ALL-UNNAMED</option>
+                                    </options>
                                     <arguments>
                                         <argument>central</argument>
                                         <argument>https://repo1.maven.org/maven2</argument>

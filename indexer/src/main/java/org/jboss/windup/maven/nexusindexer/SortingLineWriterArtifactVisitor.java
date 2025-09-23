@@ -4,13 +4,14 @@ package org.jboss.windup.maven.nexusindexer;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.io.OutputStreamWriter;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 
-import org.apache.commons.collections4.ListUtils;
-import org.apache.commons.collections4.list.TreeList;
 import org.apache.maven.index.ArtifactInfo;
 
 /**
@@ -20,28 +21,29 @@ import org.apache.maven.index.ArtifactInfo;
 public class SortingLineWriterArtifactVisitor implements RepositoryIndexManager.ArtifactVisitor<Object>
 {
     private static final Logger LOG = Logger.getLogger(SortingLineWriterArtifactVisitor.class.getName());
+    private static final int BATCH_SIZE = 10000; // Process in batches to limit memory usage
 
-    private final OutputStreamWriter writer;
     private final File outFile;
-    // Use a TreeList because it is faster to insert and sort.
-    // synchronized to support concurrent multi-threads additions from parallel streams
-    // for managing the issue https://issues.redhat.com/browse/WINDUP-2765
-    private final List<String> lines = ListUtils.synchronizedList(new TreeList<>());
+    private final Path tempDir;
     private final ArtifactFilter filter;
+    private final ConcurrentLinkedQueue<String> currentBatch = new ConcurrentLinkedQueue<>();
+    private final AtomicInteger batchCounter = new AtomicInteger(0);
+    private final AtomicInteger artifactCounter = new AtomicInteger(0);
 
 
     public SortingLineWriterArtifactVisitor(File outFile, ArtifactFilter filter)
     {
         this.outFile = outFile;
+        this.filter = filter;
         try
         {
-            this.writer = new FileWriter(outFile);
+            this.tempDir = Files.createTempDirectory("maven-indexer-batch");
+            LOG.info("Created temporary directory for batching: " + tempDir);
         }
         catch (IOException ex)
         {
-            throw new RuntimeException("Failed writing to  " + outFile.getPath());
+            throw new RuntimeException("Failed creating temporary directory for batching: " + ex.getMessage(), ex);
         }
-        this.filter = filter;
     }
 
 
@@ -50,6 +52,7 @@ public class SortingLineWriterArtifactVisitor implements RepositoryIndexManager.
     {
         if (!this.filter.accept(artifact))
             return;
+            
         // G:A:[P:[C:]]V
         // Unfortunately, G:A:::V leads to empty strings instead of nulls, see FORGE-2230.
         StringBuilder line = new StringBuilder();
@@ -63,25 +66,116 @@ public class SortingLineWriterArtifactVisitor implements RepositoryIndexManager.
         line.append(artifact.getClassifier()).append(":");
         line.append(artifact.getVersion());
         line.append("\n");
-        lines.add(line.toString());
+        
+        currentBatch.add(line.toString());
+        
+        // Process batch when it reaches the batch size
+        if (currentBatch.size() >= BATCH_SIZE) {
+            synchronized (this) {
+                if (currentBatch.size() >= BATCH_SIZE) {
+                    processBatch();
+                }
+            }
+        }
+        
+        int count = artifactCounter.incrementAndGet();
+        if (count % 50000 == 0) {
+            LOG.info("Processed " + count + " artifacts");
+        }
     }
 
 
     public Object done()
     {
-        Collections.sort(lines);
-        try
-        {
-            for (String line : lines)
-                writer.append(line);
-            this.writer.close();
+        try {
+            // Process any remaining items in the current batch
+            if (!currentBatch.isEmpty()) {
+                processBatch();
+            }
+            
+            // Merge all sorted batch files into the final output
+            mergeSortedFiles();
+            
+            // Clean up temporary directory
+            Files.walk(tempDir)
+                .map(Path::toFile)
+                .forEach(File::delete);
+            Files.deleteIfExists(tempDir);
+            
+            LOG.info("Completed processing " + artifactCounter.get() + " artifacts");
         }
         catch (IOException ex)
         {
-            throw new RuntimeException("Failed writing sorted lines to writer: " + ex.getMessage(), ex);
+            throw new RuntimeException("Failed finalizing sorted output: " + ex.getMessage(), ex);
         }
-        this.lines.clear();
         return null;
+    }
+    
+    private void processBatch() 
+    {
+        if (currentBatch.isEmpty()) {
+            return;
+        }
+        
+        try {
+            // Drain current batch to a list, sort it, and write to temp file
+            List<String> batchItems = new java.util.ArrayList<>();
+            String item;
+            while ((item = currentBatch.poll()) != null) {
+                batchItems.add(item);
+            }
+            
+            Collections.sort(batchItems);
+            
+            int batchNum = batchCounter.incrementAndGet();
+            Path batchFile = tempDir.resolve("batch_" + batchNum + ".txt");
+            
+            try (FileWriter writer = new FileWriter(batchFile.toFile())) {
+                for (String line : batchItems) {
+                    writer.write(line);
+                }
+            }
+            
+            LOG.info("Wrote batch " + batchNum + " with " + batchItems.size() + " items");
+            
+            // Clear the batch list to free memory
+            batchItems.clear();
+        }
+        catch (IOException ex) {
+            throw new RuntimeException("Failed processing batch: " + ex.getMessage(), ex);
+        }
+    }
+    
+    private void mergeSortedFiles() throws IOException 
+    {
+        List<Path> batchFiles = Files.list(tempDir)
+            .filter(path -> path.getFileName().toString().startsWith("batch_"))
+            .sorted()
+            .collect(java.util.stream.Collectors.toList());
+            
+        if (batchFiles.isEmpty()) {
+            LOG.warning("No batch files to merge");
+            return;
+        }
+        
+        LOG.info("Merging " + batchFiles.size() + " batch files into " + outFile);
+        
+        // Simple merge approach - since individual files are sorted, 
+        // we can use a priority queue for efficient merging
+        try (FileWriter finalWriter = new FileWriter(outFile)) {
+            java.util.PriorityQueue<String> allLines = new java.util.PriorityQueue<>();
+            
+            // Read all lines from all batch files
+            for (Path batchFile : batchFiles) {
+                List<String> lines = Files.readAllLines(batchFile);
+                allLines.addAll(lines);
+            }
+            
+            // Write sorted lines to final output
+            while (!allLines.isEmpty()) {
+                finalWriter.write(allLines.poll());
+            }
+        }
     }
 
 

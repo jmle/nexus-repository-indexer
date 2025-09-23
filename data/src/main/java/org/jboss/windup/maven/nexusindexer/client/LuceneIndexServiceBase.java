@@ -8,7 +8,7 @@ import java.util.logging.Logger;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.index.MultiFields;
+import org.apache.lucene.index.MultiBits;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
@@ -16,7 +16,7 @@ import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.Directory;
-import org.apache.lucene.store.SimpleFSDirectory;
+import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.util.Bits;
 import org.jboss.windup.maven.nexusindexer.ZipUtil;
 
@@ -53,7 +53,7 @@ public class LuceneIndexServiceBase implements Closeable
 
     private void initialize() throws IOException
     {
-        this.index = new SimpleFSDirectory(this.directory.toPath());
+        this.index = FSDirectory.open(this.directory.toPath());
         this.reader = DirectoryReader.open(index);
         this.searcher = new IndexSearcher(reader);
     }
@@ -78,7 +78,7 @@ public class LuceneIndexServiceBase implements Closeable
     {
         int count = 0;
         final IndexReader reader = searcher.getIndexReader();
-        Bits liveDocs = MultiFields.getLiveDocs(reader);
+        Bits liveDocs = MultiBits.getLiveDocs(reader);
         for (int i = 0; i < reader.maxDoc(); i++)
         {
             if (liveDocs != null && !liveDocs.get(i))

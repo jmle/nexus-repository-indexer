@@ -3,7 +3,7 @@ package org.jboss.windup.maven.nexusindexer;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.index.MultiFields;
+import org.apache.lucene.index.MultiBits;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
@@ -14,6 +14,10 @@ import org.apache.lucene.search.TotalHitCountCollector;
 import org.apache.lucene.util.Bits;
 import org.apache.maven.index.ArtifactContext;
 import org.apache.maven.index.ArtifactInfo;
+import org.apache.maven.index.DefaultIndexer;
+import org.apache.maven.index.DefaultIndexerEngine;
+import org.apache.maven.index.DefaultQueryCreator;
+import org.apache.maven.index.DefaultSearchEngine;
 import org.apache.maven.index.Field;
 import org.apache.maven.index.Indexer;
 import org.apache.maven.index.IteratorSearchRequest;
@@ -28,24 +32,26 @@ import org.apache.maven.index.creator.MavenPluginArtifactInfoIndexCreator;
 import org.apache.maven.index.creator.MinimalArtifactInfoIndexCreator;
 import org.apache.maven.index.creator.OsgiArtifactIndexCreator;
 import org.apache.maven.index.expr.SourcedSearchExpression;
+import org.apache.maven.index.incremental.DefaultIncrementalHandler;
+import org.apache.maven.index.incremental.IncrementalHandler;
+import org.apache.maven.index.packer.DefaultIndexPacker;
 import org.apache.maven.index.packer.IndexPacker;
 import org.apache.maven.index.packer.IndexPackingRequest;
+import org.apache.maven.index.updater.DefaultIndexUpdater;
 import org.apache.maven.index.updater.IndexUpdateRequest;
 import org.apache.maven.index.updater.IndexUpdateResult;
+import org.apache.maven.index.updater.IndexUpdateSideEffect;
 import org.apache.maven.index.updater.IndexUpdater;
 import org.apache.maven.index.updater.ResourceFetcher;
-import org.apache.maven.index.updater.WagonHelper;
 import org.apache.maven.wagon.Wagon;
-import org.codehaus.plexus.DefaultContainerConfiguration;
-import org.codehaus.plexus.DefaultPlexusContainer;
-import org.codehaus.plexus.PlexusConstants;
-import org.codehaus.plexus.PlexusContainer;
-import org.codehaus.plexus.PlexusContainerException;
-import org.codehaus.plexus.component.repository.exception.ComponentLookupException;
+import org.apache.maven.wagon.providers.http.HttpWagon;
+import org.apache.maven.wagon.repository.Repository;
 import org.jboss.forge.addon.dependencies.DependencyRepository;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -75,11 +81,11 @@ public class RepositoryIndexManager implements AutoCloseable
 
     private final File indexDirectory;
 
-    private final PlexusContainer plexusContainer;
     private final Indexer indexer;
     private final IndexUpdater indexUpdater;
     private final Wagon httpWagon;
     private final IndexingContext context;
+    final IndexPacker packer;
 
     private final File localCache;
     private final File indexDir;
@@ -132,20 +138,25 @@ public class RepositoryIndexManager implements AutoCloseable
     /*
      * Make it clear that this should not be instantiated.
      */
-    private RepositoryIndexManager(File indexDirectory, DependencyRepository repository) throws PlexusContainerException,
-                ComponentLookupException, IOException
+    private RepositoryIndexManager(File indexDirectory, DependencyRepository repository) throws IOException
     {
         final boolean updateExistingIndex = true;
 
         this.indexDirectory = indexDirectory;
 
-        final DefaultContainerConfiguration config = new DefaultContainerConfiguration();
-        config.setClassPathScanning(PlexusConstants.SCANNING_INDEX);
-        this.plexusContainer = new DefaultPlexusContainer(config);
+        this.indexer = new DefaultIndexer(
+                new DefaultSearchEngine(),
+                new DefaultIndexerEngine(),
+                new DefaultQueryCreator()
+        );
 
-        this.indexer = plexusContainer.lookup(Indexer.class);
-        this.indexUpdater = plexusContainer.lookup(IndexUpdater.class);
-        this.httpWagon = plexusContainer.lookup(Wagon.class, "http");
+        IncrementalHandler incrementalHandler = new DefaultIncrementalHandler();
+        List<IndexUpdateSideEffect> sideEffects = java.util.Collections.emptyList();
+        indexUpdater = new DefaultIndexUpdater(incrementalHandler, sideEffects);
+
+        packer = new DefaultIndexPacker(incrementalHandler);
+
+        this.httpWagon = new HttpWagon();
 
         this.localCache = new File(this.indexDirectory, repository.getId() + "-cache");
         this.indexDir = new File(this.indexDirectory, repository.getId() + "-index");
@@ -154,11 +165,11 @@ public class RepositoryIndexManager implements AutoCloseable
          * https://maven.apache.org/maven-indexer/indexer-core/apidocs/index.html
          */
         List<IndexCreator> indexers = new ArrayList<>();
-        indexers.add(plexusContainer.lookup(IndexCreator.class, MinimalArtifactInfoIndexCreator.ID));
-        indexers.add(plexusContainer.lookup(IndexCreator.class, OsgiArtifactIndexCreator.ID));
-        indexers.add(plexusContainer.lookup(IndexCreator.class, MavenPluginArtifactInfoIndexCreator.ID));
-        indexers.add(plexusContainer.lookup(IndexCreator.class, MavenArchetypeArtifactInfoIndexCreator.ID));
-        indexers.add(plexusContainer.lookup(IndexCreator.class, JarFileContentsIndexCreator.ID));
+        indexers.add(new MinimalArtifactInfoIndexCreator());
+        indexers.add(new OsgiArtifactIndexCreator());
+        indexers.add(new MavenPluginArtifactInfoIndexCreator());
+        indexers.add(new MavenArchetypeArtifactInfoIndexCreator());
+        indexers.add(new JarFileContentsIndexCreator());
         this.context = this.indexer.createIndexingContext(
             repository.getId() + "Context", repository.getId(),
             this.localCache, this.indexDir,
@@ -167,7 +178,7 @@ public class RepositoryIndexManager implements AutoCloseable
 
     private void downloadIndexAndUpdate() throws IOException
     {
-        ResourceFetcher resourceFetcher = new WagonHelper.WagonFetcher(httpWagon, new LoggingTransferListener(LOG), null, null);
+        ResourceFetcher resourceFetcher = new SimpleResourceFetcher(httpWagon);
         IndexUpdateRequest updateRequest = new IndexUpdateRequest(this.context, resourceFetcher);
         updateRequest.setIncrementalOnly(false);
         updateRequest.setForceFullUpdate(false);
@@ -189,8 +200,7 @@ public class RepositoryIndexManager implements AutoCloseable
         // Maven repo index
         final IndexSearcher searcher = context.acquireIndexSearcher();
         final IndexReader reader = searcher.getIndexReader();
-        Bits liveDocs = MultiFields.getLiveDocs(reader);
-
+        Bits liveDocs = MultiBits.getLiveDocs(reader);
 
         final File textMetadataFile = getMetadataFile(repository, outDir);
         final List<RepositoryIndexManager.ArtifactVisitor<Object>> visitors = new ArrayList<>();
@@ -242,7 +252,7 @@ public class RepositoryIndexManager implements AutoCloseable
         final AtomicInteger errors = new AtomicInteger(0);
         if (artifactsCount > 0) {
             Arrays.asList(searcher.search(missingArtifactsQuery, artifactsCount).scoreDocs)
-                    .parallelStream()
+                    .stream() // Use sequential stream to reduce memory pressure
                     .forEach(doc -> {
                                 try {
                                     final ArtifactInfo wrongArtifactInfo = IndexUtils.constructArtifactInfo(searcher.doc(doc.doc), this.context);
@@ -290,7 +300,6 @@ public class RepositoryIndexManager implements AutoCloseable
     // This query is created to address certain missing artifacts from the index.
     // See https://issues.redhat.com/browse/WINDUP-2765 and https://issues.sonatype.org/browse/OSSRH-60950
     private BooleanQuery createMissingArtifactsQuery() {
-        final BooleanQuery missingArtifactsQuery = new BooleanQuery();
 
         // Query for searching all the docs in the index with the 'packaging' (aka the extension) that is 'module'
         // e.g. Lucene query "+g:org.springframework.boot +a:spring-boot-starter-tomcat  +v:2.3.* +p:module"
@@ -303,91 +312,232 @@ public class RepositoryIndexManager implements AutoCloseable
         // https://repo1.maven.org/maven2/org/apache/ant/ant-commons-logging/1.8.0/
         final TermQuery artifactsWithPomSha512Query = new TermQuery(new Term(ArtifactInfo.PACKAGING, "pom.sha512"));
 
-        missingArtifactsQuery.add(artifactsWithModuleQuery, BooleanClause.Occur.SHOULD);
-        missingArtifactsQuery.add(artifactsWithPomSha512Query, BooleanClause.Occur.SHOULD);
-
         // Searches for artifacts with "bundle" packaging and no Symbolic Bundle Name to cater for
         // artifacts like https://mvnrepository.com/artifact/com.fasterxml.jackson.core/jackson-databind/2.12.3
         // See also https://issues.redhat.com/browse/WINDUP-3300
-        final BooleanQuery missingBundleArtifactsClause = new BooleanQuery();
         final TermQuery artifactsWithBundleQuery = new TermQuery(new Term(ArtifactInfo.PACKAGING, "bundle"));
         final TermRangeQuery artifactsWithNoSymNameQuery = TermRangeQuery.newStringRange(ArtifactInfo.BUNDLE_SYMBOLIC_NAME, null, null, true, true);
-        missingBundleArtifactsClause.add(artifactsWithBundleQuery, BooleanClause.Occur.MUST);
-        missingBundleArtifactsClause.add(artifactsWithNoSymNameQuery, BooleanClause.Occur.MUST_NOT);
-
-        missingArtifactsQuery.add(new BooleanClause(missingBundleArtifactsClause, BooleanClause.Occur.SHOULD));
+        final BooleanQuery missingBundleArtifactsClause = new BooleanQuery.Builder()
+                .add(artifactsWithBundleQuery, BooleanClause.Occur.MUST)
+                .add(artifactsWithNoSymNameQuery, BooleanClause.Occur.MUST_NOT)
+                .build();
 
         // Looks for hashless artifacts
-        final BooleanQuery missingHashArtifactsQuery = new BooleanQuery();
+        final BooleanQuery.Builder missingHashArtifactsQueryBuilder = new BooleanQuery.Builder();
         final TermQuery artifactsWithJarPackaging = new TermQuery(new Term(ArtifactInfo.PACKAGING, "jar"));
         final TermRangeQuery artifactsWithNoHashQuery = TermRangeQuery.newStringRange(ArtifactInfo.SHA1, null, null, true, true);
-        missingHashArtifactsQuery.add(artifactsWithJarPackaging, BooleanClause.Occur.MUST);
-        missingHashArtifactsQuery.add(artifactsWithNoHashQuery, BooleanClause.Occur.MUST_NOT);
+        missingHashArtifactsQueryBuilder.add(artifactsWithJarPackaging, BooleanClause.Occur.MUST);
+        missingHashArtifactsQueryBuilder.add(artifactsWithNoHashQuery, BooleanClause.Occur.MUST_NOT);
+        BooleanQuery missingHashArtifactsQuery = missingHashArtifactsQueryBuilder.build();
 
-        missingArtifactsQuery.add(new BooleanClause(missingHashArtifactsQuery, BooleanClause.Occur.SHOULD));
+        final BooleanQuery missingArtifactsQuery = new BooleanQuery.Builder()
+                .add(artifactsWithModuleQuery, BooleanClause.Occur.SHOULD)
+                .add(artifactsWithPomSha512Query, BooleanClause.Occur.SHOULD)
+                .add(new BooleanClause(missingBundleArtifactsClause, BooleanClause.Occur.SHOULD))
+                .add(new BooleanClause(missingHashArtifactsQuery, BooleanClause.Occur.SHOULD))
+                .build();
 
         return missingArtifactsQuery;
     }
 
-    private void updateNexusIndex(File outputDir, DependencyRepository repository) throws IOException, ComponentLookupException
-    {
+    private void updateNexusIndex(File outputDir, DependencyRepository repository) throws IOException {
         outputDir.mkdirs();
-        final BooleanQuery missingArtifactsQuery = new BooleanQuery();
-        // we want "module" artifacts
-        missingArtifactsQuery.add( indexer.constructQuery( MAVEN.PACKAGING, new SourcedSearchExpression( "module" ) ), BooleanClause.Occur.SHOULD );
-        // we want "pom.sha512" artifacts
-        missingArtifactsQuery.add( indexer.constructQuery( MAVEN.PACKAGING, new SourcedSearchExpression( "pom.sha512" ) ), BooleanClause.Occur.SHOULD );
-        // we want main artifacts only (no classifier)
-        missingArtifactsQuery.add( indexer.constructQuery( MAVEN.CLASSIFIER, new SourcedSearchExpression( Field.NOT_PRESENT ) ), BooleanClause.Occur.MUST_NOT );
-        final IteratorSearchRequest request = new IteratorSearchRequest( missingArtifactsQuery, Collections.singletonList(context));
-        final IteratorSearchResponse response = indexer.searchIterator(request);
-        final int artifactsCount = response.getTotalHitsCount();
-        LOG.log(Level.INFO, String.format("Found %d artifacts to be fixed in repository '%s'", artifactsCount, repository.getId()));
-        final AtomicInteger managed = new AtomicInteger(0);
-        final AtomicInteger errors = new AtomicInteger(0);
-        final List<ArtifactContext> artifactsToBeDeleted = new ArrayList<>();
-        final List<ArtifactContext> artifactsToBeAdded = new ArrayList<>();
-        StreamSupport.stream(response.spliterator(), true)
-                .forEach(artifactInfo -> {
-                    try {
-                        final String sha1 = ArtifactDownloader.getJarSha1(repository.getUrl(), artifactInfo);
-                        if (!ArtifactUtil.isArtifactAlreadyIndexed(indexer, this.context, sha1, artifactInfo)) {
-                            LOG.log(Level.FINE, String.format("Deleting artifact: {}", artifactInfo));
-                            artifactsToBeDeleted.add(new ArtifactContext(null, null, null, artifactInfo, null));
-                            artifactInfo.setSha1(sha1);
-                            artifactInfo.setPackaging("jar");
-                            artifactInfo.setFileExtension("jar");
-                            artifactsToBeAdded.add(new ArtifactContext(null, null, null, artifactInfo, null));
-                            if (managed.incrementAndGet() % 5000 == 0)
-                            {
-                                LOG.log(Level.INFO, String.format("Managed %d/%d artifacts ", managed.get(), artifactsCount));
-                            }
-                        } else {
-                            LOG.log(Level.INFO, String.format("Dependency %s is NOT wrong anymore in the source index", artifactInfo.getUinfo()));
-                        }
-                    }
-                    catch (IOException e) {
-                        errors.incrementAndGet();
-                        LOG.log(Level.WARNING, String.format("Document %s management has failed%n    %s", artifactInfo, e.getMessage()));
-                    }
-                });
-        LOG.log(Level.INFO, String.format("Managed %d/%d artifacts with %d artifacts not managed for problems (check log above).%nTime to update the index", managed.get(), artifactsCount, errors.get()));
-        indexer.deleteArtifactsFromIndex(artifactsToBeDeleted, context);
-        indexer.addArtifactsToIndex(artifactsToBeAdded, context);
-        LOG.log(Level.INFO, String.format("Index updated so moving forward to pack it in %s", outputDir));
-        final IndexPacker packer = plexusContainer.lookup(IndexPacker.class);
-        final IndexSearcher indexSearcher = context.acquireIndexSearcher();
+
+        LOG.log(Level.INFO, "Creating fresh index to avoid schema compatibility issues");
+        
+        // Create a fresh temporary index to avoid schema conflicts
+        File tempIndexDir = new File(outputDir, "temp-index-" + System.currentTimeMillis());
+        tempIndexDir.mkdirs();
+        
+        IndexingContext tempContext = null;
         try {
-            final IndexPackingRequest indexPackingRequest = new IndexPackingRequest(context, indexSearcher.getIndexReader(), outputDir);
-            indexPackingRequest.setCreateChecksumFiles(true);
-            indexPackingRequest.setCreateIncrementalChunks(true);
-            packer.packIndex(indexPackingRequest);
-        } catch (IOException e) {
-            LOG.log(Level.SEVERE, String.format("Cannot zip index;%n", e.getMessage()));
+            // Create fresh index context
+            List<IndexCreator> indexers = new ArrayList<>();
+            indexers.add(new MinimalArtifactInfoIndexCreator());
+            indexers.add(new OsgiArtifactIndexCreator());
+            indexers.add(new MavenPluginArtifactInfoIndexCreator());
+            indexers.add(new MavenArchetypeArtifactInfoIndexCreator());
+            indexers.add(new JarFileContentsIndexCreator());
+            
+            tempContext = this.indexer.createIndexingContext(
+                repository.getId() + "TempContext", repository.getId(),
+                new File(tempIndexDir, "cache"), new File(tempIndexDir, "index"),
+                repository.getUrl(), null, true, false, indexers); // false = don't update existing
+            
+            final IndexingContext finalTempContext = tempContext;
+
+            final BooleanQuery missingArtifactsQuery = new BooleanQuery.Builder()
+                // we want "module" artifacts
+                .add( indexer.constructQuery( MAVEN.PACKAGING, new SourcedSearchExpression( "module" ) ), BooleanClause.Occur.SHOULD )
+                // we want "pom.sha512" artifacts
+                .add( indexer.constructQuery( MAVEN.PACKAGING, new SourcedSearchExpression( "pom.sha512" ) ), BooleanClause.Occur.SHOULD )
+                // we want main artifacts only (no classifier)
+                .add( indexer.constructQuery( MAVEN.CLASSIFIER, new SourcedSearchExpression( Field.NOT_PRESENT ) ), BooleanClause.Occur.MUST_NOT ).build();
+            final IteratorSearchRequest request = new IteratorSearchRequest( missingArtifactsQuery, Collections.singletonList(context));
+            final IteratorSearchResponse response = indexer.searchIterator(request);
+            final int artifactsCount = response.getTotalHitsCount();
+            LOG.log(Level.INFO, String.format("Found %d artifacts to be fixed in repository '%s'", artifactsCount, repository.getId()));
+            final AtomicInteger managed = new AtomicInteger(0);
+            final AtomicInteger errors = new AtomicInteger(0);
+            final List<ArtifactContext> artifactsToBeAdded = new ArrayList<>();
+            final int BATCH_SIZE = 1000; // Process in smaller batches to limit memory usage
+            
+            StreamSupport.stream(response.spliterator(), false) // Use sequential stream to reduce memory pressure
+                    .forEach(artifactInfo -> {
+                        try {
+                            final String sha1 = ArtifactDownloader.getJarSha1(repository.getUrl(), artifactInfo);
+                            if (!ArtifactUtil.isArtifactAlreadyIndexed(indexer, finalTempContext, sha1, artifactInfo)) {
+                                // Create corrected artifact info
+                                ArtifactInfo correctedArtifact = new ArtifactInfo(repository.getId(),
+                                        artifactInfo.getGroupId(), artifactInfo.getArtifactId(),
+                                        artifactInfo.getVersion(), null, "jar");
+                                correctedArtifact.setSha1(sha1);
+                                correctedArtifact.setPackaging("jar");
+                                correctedArtifact.setFileExtension("jar");
+                                
+                                artifactsToBeAdded.add(new ArtifactContext(null, null, null, correctedArtifact, null));
+                                
+                                // Process in batches to limit memory usage
+                                if (artifactsToBeAdded.size() >= BATCH_SIZE) {
+                                    try {
+                                        indexer.addArtifactsToIndex(new ArrayList<>(artifactsToBeAdded), finalTempContext);
+                                        artifactsToBeAdded.clear();
+                                        LOG.log(Level.INFO, String.format("Added batch of %d artifacts to fresh index", BATCH_SIZE));
+                                    } catch (IOException e) {
+                                        LOG.log(Level.SEVERE, "Failed adding batch to fresh index: " + e.getMessage());
+                                    }
+                                }
+                                
+                                if (managed.incrementAndGet() % 5000 == 0)
+                                {
+                                    LOG.log(Level.INFO, String.format("Processed %d/%d artifacts ", managed.get(), artifactsCount));
+                                }
+                            } else {
+                                LOG.log(Level.FINE, String.format("Dependency %s already exists in corrected form", artifactInfo.getUinfo()));
+                            }
+                        }
+                        catch (IOException e) {
+                            errors.incrementAndGet();
+                            LOG.log(Level.WARNING, String.format("Document %s processing failed%n    %s", artifactInfo, e.getMessage()));
+                        }
+                    });
+            
+            // Process any remaining artifacts
+            if (!artifactsToBeAdded.isEmpty()) {
+                try {
+                    indexer.addArtifactsToIndex(artifactsToBeAdded, finalTempContext);
+                    LOG.log(Level.INFO, String.format("Added final batch of %d artifacts to fresh index", artifactsToBeAdded.size()));
+                } catch (IOException e) {
+                    LOG.log(Level.SEVERE, "Failed adding final batch to fresh index: " + e.getMessage());
+                }
+            }
+            
+            LOG.log(Level.INFO, String.format("Processed %d/%d artifacts with %d artifacts not processed due to errors", managed.get(), artifactsCount, errors.get()));
+            
+            // Copy existing good artifacts from original index to fresh index
+            copyGoodArtifacts(finalTempContext, repository);
+            
+            LOG.log(Level.INFO, String.format("Fresh index created, now packing it in %s", outputDir));
+            final IndexSearcher indexSearcher = finalTempContext.acquireIndexSearcher();
+            try {
+                final IndexPackingRequest indexPackingRequest = new IndexPackingRequest(finalTempContext, indexSearcher.getIndexReader(), outputDir);
+                indexPackingRequest.setCreateChecksumFiles(true);
+                indexPackingRequest.setCreateIncrementalChunks(true);
+                packer.packIndex(indexPackingRequest);
+                LOG.log(Level.INFO, "Fresh index successfully packed");
+            } catch (IOException e) {
+                LOG.log(Level.SEVERE, String.format("Cannot pack fresh index: %s", e.getMessage()));
+                throw e;
+            } finally {
+                finalTempContext.releaseIndexSearcher(indexSearcher);
+            }
+            
         } finally {
-            context.releaseIndexSearcher(indexSearcher);
+            // Clean up temporary context and files
+            if (tempContext != null) {
+                try {
+                    tempContext.close(false);
+                    indexer.closeIndexingContext(tempContext, false);
+                } catch (IOException e) {
+                    LOG.log(Level.WARNING, "Failed to close temporary context: " + e.getMessage());
+                }
+            }
+            
+            // Clean up temp directory
+            try {
+                if (tempIndexDir.exists()) {
+                    deleteRecursively(tempIndexDir);
+                }
+            } catch (Exception e) {
+                LOG.log(Level.WARNING, "Failed to clean up temporary directory: " + e.getMessage());
+            }
         }
-        LOG.log(Level.INFO, String.format("Index packed", managed.get(), artifactsCount, errors.get()));
+    }
+    
+    private void copyGoodArtifacts(IndexingContext targetContext, DependencyRepository repository) throws IOException {
+        LOG.log(Level.INFO, "Copying existing good artifacts to fresh index");
+        
+        // Copy all artifacts that don't need fixing
+        final IndexSearcher searcher = context.acquireIndexSearcher();
+        try {
+            final IndexReader reader = searcher.getIndexReader();
+            Bits liveDocs = MultiBits.getLiveDocs(reader);
+            
+            final AtomicInteger copiedCount = new AtomicInteger(0);
+            final List<ArtifactContext> artifactsToAdd = new ArrayList<>();
+            final int BATCH_SIZE = 1000;
+            
+            for (int i = 0; i < reader.maxDoc(); i++) {
+                if (liveDocs != null && !liveDocs.get(i))
+                    continue;
+
+                final Document doc = reader.document(i);
+                final ArtifactInfo artifact = IndexUtils.constructArtifactInfo(doc, this.context);
+                if (artifact == null) {
+                    continue;
+                }
+
+                // Only copy artifacts that don't need fixing (not module, not pom.sha512, etc.)
+                if (!"module".equals(artifact.getPackaging()) && 
+                    !"pom.sha512".equals(artifact.getPackaging()) &&
+                    (artifact.getClassifier() == null || artifact.getClassifier().isEmpty())) {
+                    
+                    artifactsToAdd.add(new ArtifactContext(null, null, null, artifact, null));
+                    
+                    if (artifactsToAdd.size() >= BATCH_SIZE) {
+                        indexer.addArtifactsToIndex(new ArrayList<>(artifactsToAdd), targetContext);
+                        artifactsToAdd.clear();
+                        LOG.log(Level.INFO, String.format("Copied batch of %d good artifacts", BATCH_SIZE));
+                    }
+                    
+                    if (copiedCount.incrementAndGet() % 10000 == 0) {
+                        LOG.log(Level.INFO, String.format("Copied %d good artifacts", copiedCount.get()));
+                    }
+                }
+            }
+            
+            // Process remaining artifacts
+            if (!artifactsToAdd.isEmpty()) {
+                indexer.addArtifactsToIndex(artifactsToAdd, targetContext);
+                LOG.log(Level.INFO, String.format("Copied final batch of %d good artifacts", artifactsToAdd.size()));
+            }
+            
+            LOG.log(Level.INFO, String.format("Completed copying %d good artifacts to fresh index", copiedCount.get()));
+        } finally {
+            context.releaseIndexSearcher(searcher);
+        }
+    }
+    
+    private void deleteRecursively(File file) {
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    deleteRecursively(child);
+                }
+            }
+        }
+        file.delete();
     }
 
     @Override
@@ -407,5 +557,63 @@ public class RepositoryIndexManager implements AutoCloseable
         void visit(ArtifactInfo artifact);
         public T done();
     }
+
+    private static class SimpleResourceFetcher implements ResourceFetcher {
+        private final Wagon wagon;
+
+        public SimpleResourceFetcher(Wagon wagon) {
+            this.wagon = wagon;
+        }
+
+        @Override
+        public void connect(String id, String url) throws IOException {
+            try {
+                Repository repository = new Repository(id, url);
+                wagon.connect(repository);
+            } catch (Exception e) {
+                throw new IOException("Failed to connect to repository: " + url, e);
+            }
+        }
+
+        @Override
+        public void disconnect() throws IOException {
+            try {
+                wagon.disconnect();
+            } catch (Exception e) {
+                throw new IOException("Failed to disconnect", e);
+            }
+        }
+
+        @Override
+        public InputStream retrieve(String name) throws IOException {
+            File tempFile = null;
+            try {
+                tempFile = File.createTempFile("maven-index-", ".tmp");
+                wagon.get(name, tempFile);
+                
+                // Create a custom InputStream that deletes the temp file when closed
+                File finalTempFile = tempFile;
+                return new FileInputStream(tempFile) {
+                    @Override
+                    public void close() throws IOException {
+                        try {
+                            super.close();
+                        } finally {
+                            if (finalTempFile.exists()) {
+                                finalTempFile.delete();
+                            }
+                        }
+                    }
+                };
+            } catch (Exception e) {
+                // Clean up temp file if something went wrong
+                if (tempFile != null && tempFile.exists()) {
+                    tempFile.delete();
+                }
+                throw new IOException("Failed to retrieve: " + name, e);
+            }
+        }
+    }
+
 
 }

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
@@ -23,33 +24,39 @@
         <dependency>
             <groupId>org.apache.lucene</groupId>
             <artifactId>lucene-core</artifactId>
-            <version>7.0.0</version>
+            <version>9.12.1</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.lucene</groupId>
-            <artifactId>lucene-analyzers-common</artifactId>
-            <version>7.0.0</version>
+            <artifactId>lucene-analysis-common</artifactId>
+            <version>9.12.1</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.lucene</groupId>
             <artifactId>lucene-highlighter</artifactId>
-            <version>7.0.0</version>
+            <version>9.12.1</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.lucene</groupId>
             <artifactId>lucene-queryparser</artifactId>
-            <version>7.0.0</version>
+            <version>9.12.1</version>
             <scope>provided</scope>
         </dependency>
 
         <!-- Test dependencies -->
         <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <version>4.12</version>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.1</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.vintage</groupId>
+            <artifactId>junit-vintage-engine</artifactId>
+            <version>5.10.1</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -61,7 +68,7 @@
                 <executions>
                     <execution>
                         <id>copy-data-text</id>
-                        <phase>process-resources</phase>
+                        <phase>none</phase>
                         <goals>
                             <goal>unpack</goal>
                         </goals>
@@ -80,51 +87,55 @@
                 </executions>
             </plugin>
 
-            <plugin>
-                <artifactId>maven-assembly-plugin</artifactId>
-                <executions>
-                    <!-- Bundle the resulting indexes and text files to an artifact. -->
-                    <execution>
-                        <id>bundle-mappings</id>
-                        <phase>prepare-package</phase>
-                        <goals>
-                            <goal>single</goal>
-                        </goals>
-                        <configuration>
-                            <descriptor>src/main/assembly/bundle-metadata.xml</descriptor>
-                            <appendAssemblyId>false</appendAssemblyId>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>exec-maven-plugin</artifactId>
-                <version>1.4.0</version>
-                <executions>
-                    <!-- Generate the indexes. -->
-                    <execution>
-                        <id>central</id>
-                        <phase>compile</phase>
-                        <goals>
-                            <goal>java</goal>
-                        </goals>
-                        <configuration>
-                            <classpathScope>test</classpathScope>
-                            <mainClass>org.jboss.windup.maven.nexusindexer.client.TextFileToLucene7Converter</mainClass>
-                            <arguments>
-                                <argument>${project.build.directory}/data-text</argument>
-                                <argument>${project.build.directory}/lucene</argument>
-                            </arguments>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
+<!--            <plugin>-->
+<!--                <groupId>org.apache.maven.plugins</groupId>-->
+<!--                <artifactId>maven-assembly-plugin</artifactId>-->
+<!--                &lt;!&ndash; Version inherited from parent &ndash;&gt;-->
+<!--                <executions>-->
+<!--                    &lt;!&ndash; Bundle the resulting indexes and text files to an artifact. &ndash;&gt;-->
+<!--                    <execution>-->
+<!--                        <id>bundle-mappings</id>-->
+<!--                        <phase>none</phase>-->
+<!--                        <goals>-->
+<!--                            <goal>single</goal>-->
+<!--                        </goals>-->
+<!--                        <configuration>-->
+<!--                            <descriptors>-->
+<!--                                <descriptor>src/main/assembly/bundle-metadata.xml</descriptor>-->
+<!--                            </descriptors>-->
+<!--                            <appendAssemblyId>false</appendAssemblyId>-->
+<!--                        </configuration>-->
+<!--                    </execution>-->
+<!--                </executions>-->
+<!--            </plugin>-->
+<!--            <plugin>-->
+<!--                <groupId>org.codehaus.mojo</groupId>-->
+<!--                <artifactId>exec-maven-plugin</artifactId>-->
+<!--                &lt;!&ndash; Version inherited from parent &ndash;&gt;-->
+<!--                <executions>-->
+<!--                    &lt;!&ndash; Generate the indexes. &ndash;&gt;-->
+<!--                    <execution>-->
+<!--                        <id>central</id>-->
+<!--                        <phase>none</phase>-->
+<!--                        <goals>-->
+<!--                            <goal>java</goal>-->
+<!--                        </goals>-->
+<!--                        <configuration>-->
+<!--                            <classpathScope>test</classpathScope>-->
+<!--                            <mainClass>org.jboss.windup.maven.nexusindexer.client.TextFileToLucene7Converter</mainClass>-->
+<!--                            <arguments>-->
+<!--                                <argument>${project.build.directory}/data-text</argument>-->
+<!--                                <argument>${project.build.directory}/lucene</argument>-->
+<!--                            </arguments>-->
+<!--                        </configuration>-->
+<!--                    </execution>-->
+<!--                </executions>-->
+<!--            </plugin>-->
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
-                <version>2.19.1</version>
+                <!-- Version inherited from parent -->
                 <executions>
                     <execution>
                         <goals>
@@ -136,23 +147,9 @@
             </plugin>
 
             <plugin>
-                <groupId>org.jboss.forge.furnace</groupId>
-                <artifactId>furnace-maven-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>generate-dot</id>
-                        <phase>prepare-package</phase>
-                        <goals>
-                            <goal>generate-dot</goal>
-                        </goals>
-                        <configuration>
-                            <attach>true</attach>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
+                <!-- Version inherited from parent -->
                 <executions>
                     <execution>
                         <id>create-forge-addon</id>

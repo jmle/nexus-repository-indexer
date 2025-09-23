@@ -3,6 +3,7 @@ package org.jboss.windup.maven.nexusindexer;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Paths;
 import java.util.Collections;
 import java.util.logging.Logger;
 import org.apache.commons.io.FileUtils;
@@ -12,8 +13,7 @@ import org.apache.lucene.document.Field;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
-import org.apache.lucene.store.SimpleFSDirectory;
-import org.apache.lucene.util.Version;
+import org.apache.lucene.store.FSDirectory;
 import org.apache.maven.index.ArtifactInfo;
 
 /**
@@ -31,7 +31,7 @@ public class LuceneIndexArtifactVisitor implements RepositoryIndexManager.Artifa
     private final ArtifactFilter filter;
     private final File indexDir;
     private final IndexWriter indexWriter;
-    private SimpleFSDirectory luceneOutputDirResource;
+    private FSDirectory luceneOutputDirResource;
 
     public static final String SHA1 = "sha1";
     public static final String GROUP_ID = "groupId";
@@ -52,9 +52,9 @@ public class LuceneIndexArtifactVisitor implements RepositoryIndexManager.Artifa
             FileUtils.write(markerFile, "This file is searched by Windup to locate the Lucene index with repository metadata.");
 
             // Create our local result index.
-            this.luceneOutputDirResource = new SimpleFSDirectory(indexDir);
-            StandardAnalyzer standardAnalyzer = new StandardAnalyzer(Version.LUCENE_48);
-            IndexWriterConfig config = new IndexWriterConfig(Version.LUCENE_48, standardAnalyzer);
+            this.luceneOutputDirResource = FSDirectory.open(Paths.get(indexDir.getPath()));
+            StandardAnalyzer standardAnalyzer = new StandardAnalyzer();
+            IndexWriterConfig config = new IndexWriterConfig(standardAnalyzer);
             this.indexWriter = new IndexWriter(luceneOutputDirResource, config);
         }
         catch (IOException ex)
@@ -112,7 +112,11 @@ public class LuceneIndexArtifactVisitor implements RepositoryIndexManager.Artifa
         }
         finally
         {
-            this.luceneOutputDirResource.close();
+            try {
+                this.luceneOutputDirResource.close();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
         }
         return null;
     }
