@@ -15,7 +15,12 @@ on:
 
 jobs:
   generate-index:
-    runs-on: ubuntu-latest
+    # Use larger GitHub runner for more disk space and CPU
+    # Fallback options if above doesn't work:
+    # - ubuntu-latest (14GB disk, may fail for Maven Central)
+    # - ubuntu-latest-8-cores (larger runner, more expensive)
+    # - self-hosted (your own runner with unlimited space)
+    runs-on: ubuntu-latest-4-cores  
     timeout-minutes: 480  # 8 hours timeout
     
     steps:
@@ -35,6 +40,12 @@ jobs:
         key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
         restore-keys: ${{ runner.os }}-m2
         
+    - name: Check available disk space
+      run: |
+        echo "=== Initial Disk Space ==="
+        df -h
+        echo "=========================="
+        
     - name: Create output directories
       run: |
         mkdir -p /tmp/maven-index-output
@@ -51,17 +62,44 @@ jobs:
         echo "OUTPUT_FILE=${REPO_ID}-${DATE}.archive-metadata.txt" >> $GITHUB_ENV
         echo "COMPRESSED_FILE=${REPO_ID}-${DATE}.archive-metadata.txt.gz" >> $GITHUB_ENV
         
+    - name: Free up disk space
+      run: |
+        echo "=== Freeing up disk space ==="
+        # Remove unnecessary packages
+        sudo apt-get clean
+        sudo apt-get autoremove -y
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /usr/local/share/boost
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+        
+        echo "=== Disk space after cleanup ==="
+        df -h
+        echo "=========================="
+        
     - name: Generate Maven Central index
       run: |
         echo "Starting Maven Central index generation..."
         echo "Repository: $REPO_URL"
         echo "Output will be: $OUTPUT_FILE"
         
+        echo "=== Disk space before generation ==="
+        df -h
+        
         mvn compile exec:java \
           -pl indexer \
           -Djava.util.concurrent.ForkJoinPool.common.parallelism=8 \
           -Dexec.mainClass="org.jboss.windup.maven.nexusindexer.GenerateMetadataFile" \
           -Dexec.args="TEXT $REPO_ID $REPO_URL /tmp/maven-index-output /tmp/maven-index-cache"
+          
+    - name: Clean up Maven cache
+      run: |
+        echo "=== Cleaning up Maven cache ==="
+        rm -rf /tmp/maven-index-cache
+        rm -rf ~/.m2/repository/org/apache/maven/indexer
+        
+        echo "=== Disk space after Maven cleanup ==="
+        df -h
           
     - name: Check output file
       run: |
@@ -83,10 +121,17 @@ jobs:
       run: |
         echo "Compressing index file..."
         cd /tmp/maven-index-output
+        
+        echo "=== Disk space before compression ==="
+        df -h
+        
         gzip -9 "$OUTPUT_FILE"
         
         echo "✅ Compression completed!"
         echo "Compressed file size: $(du -h "$COMPRESSED_FILE" | cut -f1)"
+        
+        echo "=== Disk space after compression ==="
+        df -h
         
     - name: Generate release notes
       run: |
