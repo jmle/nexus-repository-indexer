@@ -34,7 +34,7 @@ jobs:
       - name: Create Nexus Index
         run: mvn -f data-text/pom.xml install -DskipTests -P update-central-index
       - name: Archive Nexus Index
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: nexus-maven-repository-index.gz
           path: data-text/target/nexus-maven-repository-index.gz
