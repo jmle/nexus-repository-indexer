@@ -173,7 +173,11 @@ public class SortingLineWriterArtifactVisitor implements RepositoryIndexManager.
             
             // Write sorted lines to final output
             while (!allLines.isEmpty()) {
-                finalWriter.write(allLines.poll());
+                String line = allLines.poll();
+                finalWriter.write(line);
+                if (!line.endsWith("\n")) {
+                    finalWriter.write("\n");
+                }
             }
         }
     }
