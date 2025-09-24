@@ -79,16 +79,6 @@
 <!--                                <configuration>-->
 <!--                                    <mainClass>org.jboss.windup.maven.nexusindexer.GenerateMetadataFile</mainClass>-->
 <!--                                    <cleanupDaemonThreads>false</cleanupDaemonThreads>-->
-<!--                                    <options>-->
-<!--                                        <option>&#45;&#45;add-opens=java.base/java.lang=ALL-UNNAMED</option>-->
-<!--                                        <option>&#45;&#45;add-opens=java.base/java.lang.reflect=ALL-UNNAMED</option>-->
-<!--                                        <option>&#45;&#45;add-opens=java.base/java.util=ALL-UNNAMED</option>-->
-<!--                                        <option>&#45;&#45;add-opens=java.base/java.util.concurrent=ALL-UNNAMED</option>-->
-<!--                                        <option>&#45;&#45;add-opens=java.base/java.text=ALL-UNNAMED</option>-->
-<!--                                        <option>&#45;&#45;add-opens=java.base/java.time=ALL-UNNAMED</option>-->
-<!--                                        <option>&#45;&#45;add-opens=java.base/sun.nio.ch=ALL-UNNAMED</option>-->
-<!--                                        <option>&#45;&#45;add-opens=java.base/sun.util.calendar=ALL-UNNAMED</option>-->
-<!--                                    </options>-->
 <!--                                    <arguments>-->
 <!--                                        <argument>text</argument>-->
 <!--                                        <argument>central</argument>-->
@@ -153,16 +143,6 @@
                                 <configuration>
                                     <mainClass>org.jboss.windup.maven.nexusindexer.UpdateNexusIndex</mainClass>
                                     <cleanupDaemonThreads>false</cleanupDaemonThreads>
-                                    <options>
-                                        <option>--add-opens=java.base/java.lang=ALL-UNNAMED</option>
-                                        <option>--add-opens=java.base/java.lang.reflect=ALL-UNNAMED</option>
-                                        <option>--add-opens=java.base/java.util=ALL-UNNAMED</option>
-                                        <option>--add-opens=java.base/java.util.concurrent=ALL-UNNAMED</option>
-                                        <option>--add-opens=java.base/java.text=ALL-UNNAMED</option>
-                                        <option>--add-opens=java.base/java.time=ALL-UNNAMED</option>
-                                        <option>--add-opens=java.base/sun.nio.ch=ALL-UNNAMED</option>
-                                        <option>--add-opens=java.base/sun.util.calendar=ALL-UNNAMED</option>
-                                    </options>
                                     <arguments>
                                         <argument>central</argument>
                                         <argument>https://repo1.maven.org/maven2</argument>

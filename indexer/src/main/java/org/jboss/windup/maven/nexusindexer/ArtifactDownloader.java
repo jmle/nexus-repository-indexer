@@ -4,6 +4,8 @@ package org.jboss.windup.maven.nexusindexer;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.Arrays;
 import java.util.LinkedList;
@@ -11,6 +13,7 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.apache.http.client.utils.URIBuilder;
 import org.apache.maven.index.ArtifactInfo;
 import org.apache.maven.index.ArtifactInfoRecord;
 import org.eclipse.aether.RepositorySystem;
@@ -107,11 +110,18 @@ public class ArtifactDownloader
             throw new RuntimeException(String.format("Can't resolve the BOM artifact: %s %s", artifact, ex.getMessage()), ex);
         }
     }
-    public static String getJarSha1(String repositoryUrl, ArtifactInfo artifactInfo) throws IOException
-    {
+    public static String getJarSha1(String repositoryUrl, ArtifactInfo artifactInfo) throws IOException, URISyntaxException {
         final String uInfo = artifactInfo.getUinfo();
         final String[] gav = uInfo.split("\\" + ArtifactInfoRecord.FS);
         // e.g. https://repo1.maven.org/maven2/org/springframework/boot/spring-boot-starter-web/2.3.2.RELEASE/spring-boot-starter-web-2.3.2.RELEASE-javadoc.jar.sha1
+//        final URL url = new URIBuilder(repositoryUrl)
+//                .setPathSegments(
+//                        gav[0].replace('.', '/'),       // groupId
+//                        gav[1],                                         // artifactId
+//                        gav[2],                                         // version
+//                        gav[1] + "-" + gav[2] + ".jar.sha1"             // file name
+//                ).build().toURL();
+
         final String sha1FileUrl = new StringBuilder(repositoryUrl)
                 // groupId
                 .append("/").append(gav[0].replace('.', '/'))

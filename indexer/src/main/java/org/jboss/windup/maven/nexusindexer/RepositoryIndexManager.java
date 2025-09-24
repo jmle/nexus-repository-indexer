@@ -52,6 +52,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -251,8 +252,13 @@ public class RepositoryIndexManager implements AutoCloseable
         final AtomicInteger managed = new AtomicInteger(0);
         final AtomicInteger errors = new AtomicInteger(0);
         if (artifactsCount > 0) {
+            // Control parallelism to avoid overwhelming the server (default: available processors)
+            // Can be controlled via: -Djava.util.concurrent.ForkJoinPool.common.parallelism=10
+            LOG.log(Level.INFO, String.format("Processing %d artifacts with parallel SHA1 downloads (parallelism: %d)", 
+                    artifactsCount, java.util.concurrent.ForkJoinPool.getCommonPoolParallelism()));
+            
             Arrays.asList(searcher.search(missingArtifactsQuery, artifactsCount).scoreDocs)
-                    .stream() // Use sequential stream to reduce memory pressure
+                    .parallelStream() // Use parallel stream for concurrent SHA1 downloads
                     .forEach(doc -> {
                                 try {
                                     final ArtifactInfo wrongArtifactInfo = IndexUtils.constructArtifactInfo(searcher.doc(doc.doc), this.context);
@@ -277,7 +283,7 @@ public class RepositoryIndexManager implements AutoCloseable
                                     } else {
                                         LOG.log(Level.INFO, String.format("Dependency %s is NOT missing anymore in the source index", wrongArtifactInfo.getUinfo()));
                                     }
-                                } catch (IOException e) {
+                                } catch (IOException | URISyntaxException e) {
                                     errors.incrementAndGet();
                                     LOG.log(Level.WARNING, String.format("Document %s management has failed%n    %s", doc, e.getMessage()));
                                 }
@@ -416,7 +422,7 @@ public class RepositoryIndexManager implements AutoCloseable
                                 LOG.log(Level.FINE, String.format("Dependency %s already exists in corrected form", artifactInfo.getUinfo()));
                             }
                         }
-                        catch (IOException e) {
+                        catch (IOException | URISyntaxException e) {
                             errors.incrementAndGet();
                             LOG.log(Level.WARNING, String.format("Document %s processing failed%n    %s", artifactInfo, e.getMessage()));
                         }

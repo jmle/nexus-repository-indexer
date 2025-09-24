@@ -48,9 +48,10 @@ public class GenerateMetadataFile
     private static void printUsage()
     {
         System.err.println("  Usage:");
-        System.err.println("    java -jar ... <repoId> <repoUrl> <outputDirectory> [<indexDirectory>]");
+        System.err.println("    java -jar ... <format> <repoId> <repoUrl> <outputDirectory> [<indexDirectory>]");
         System.err.println("");
         System.err.println("  Parameters:");
+        System.err.println("    <format>           Output format: TEXT or LUCENE");
         System.err.println("    <repoId>           ID of the repository; used for generated file names.");
         System.err.println("    <repoUrl>          URL of the repository.");
         System.err.println("    <outputDirectory>  Where to put the created mapping files.");
