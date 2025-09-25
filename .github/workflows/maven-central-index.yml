@@ -95,6 +95,14 @@ jobs:
         df -h
         echo "=========================="
         
+    - name: Build JAR file
+      run: |
+        echo "Building JAR file..."
+        mvn package -DskipTests
+        
+        echo "=== Available JAR files ==="
+        find . -name "*.jar" -type f | grep -v "/original-" | head -10
+        
     - name: Generate Maven Central index
       run: |
         echo "Starting Maven Central index generation..."
@@ -108,15 +116,23 @@ jobs:
         echo "JAVA_HOME: $JAVA_HOME"
         echo "PATH: $PATH"
         which java
-        which mvn
         
-        # First compile the project
-        mvn compile -pl indexer
+        # Find the JAR file
+        JAR_FILE=$(find ./indexer/target -name "nexus-indexer-*.jar" -not -name "*-sources.jar" | head -1)
+        if [ -z "$JAR_FILE" ]; then
+          echo "❌ JAR file not found!"
+          echo "Available files in indexer/target:"
+          ls -la ./indexer/target/
+          exit 1
+        fi
         
-        # Then run using exec:exec instead of exec:java (more reliable with environment)
-        mvn exec:exec -pl indexer \
-          -Dexec.executable="java" \
-          -Dexec.args="-Djava.util.concurrent.ForkJoinPool.common.parallelism=8 -cp %classpath org.jboss.windup.maven.nexusindexer.GenerateMetadataFile TEXT $REPO_ID $REPO_URL /tmp/maven-index-output /tmp/maven-index-cache"
+        echo "✅ Found JAR file: $JAR_FILE"
+        
+        # Run directly with java -jar (bypassing Maven completely)
+        java -Djava.util.concurrent.ForkJoinPool.common.parallelism=8 \
+             -Xmx4G \
+             -jar "$JAR_FILE" \
+             TEXT "$REPO_ID" "$REPO_URL" /tmp/maven-index-output /tmp/maven-index-cache
           
     - name: Clean up Maven cache
       run: |
