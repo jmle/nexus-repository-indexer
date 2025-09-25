@@ -65,16 +65,6 @@ jobs:
         echo "OUTPUT_FILE=${REPO_ID}-${DATE}.archive-metadata.txt" >> $GITHUB_ENV
         echo "COMPRESSED_FILE=${REPO_ID}-${DATE}.archive-metadata.txt.gz" >> $GITHUB_ENV
         
-    - name: Free up disk space
-      run: |
-        # Remove unnecessary packages to free up space
-        sudo apt-get clean
-        sudo apt-get autoremove -y
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /opt/ghc
-        sudo rm -rf /usr/local/share/boost
-        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-        
     - name: Build JAR file
       run: |
         echo "Building JAR file..."
