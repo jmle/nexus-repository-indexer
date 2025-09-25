@@ -37,6 +37,11 @@ jobs:
       with:
         maven-version: 3.9.6
         
+    - name: Check Maven
+      run: |
+        echo "=== Maven version ==="
+        mvn -version
+        
     - name: Cache Maven dependencies
       uses: actions/cache@v4
       with:
