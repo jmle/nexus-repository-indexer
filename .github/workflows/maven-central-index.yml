@@ -104,11 +104,19 @@ jobs:
         echo "=== Disk space before generation ==="
         df -h
         
-        mvn compile exec:java \
-          -pl indexer \
-          -Djava.util.concurrent.ForkJoinPool.common.parallelism=8 \
-          -Dexec.mainClass="org.jboss.windup.maven.nexusindexer.GenerateMetadataFile" \
-          -Dexec.args="TEXT $REPO_ID $REPO_URL /tmp/maven-index-output /tmp/maven-index-cache"
+        echo "=== Environment check ==="
+        echo "JAVA_HOME: $JAVA_HOME"
+        echo "PATH: $PATH"
+        which java
+        which mvn
+        
+        # First compile the project
+        mvn compile -pl indexer
+        
+        # Then run using exec:exec instead of exec:java (more reliable with environment)
+        mvn exec:exec -pl indexer \
+          -Dexec.executable="java" \
+          -Dexec.args="-Djava.util.concurrent.ForkJoinPool.common.parallelism=8 -cp %classpath org.jboss.windup.maven.nexusindexer.GenerateMetadataFile TEXT $REPO_ID $REPO_URL /tmp/maven-index-output /tmp/maven-index-cache"
           
     - name: Clean up Maven cache
       run: |
