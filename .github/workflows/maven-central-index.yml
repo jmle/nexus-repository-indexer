@@ -65,6 +65,10 @@ jobs:
         echo "OUTPUT_FILE=${REPO_ID}-${DATE}.archive-metadata.txt" >> $GITHUB_ENV
         echo "COMPRESSED_FILE=${REPO_ID}-${DATE}.archive-metadata.txt.gz" >> $GITHUB_ENV
         
+    - name: Build indexer
+      run: |
+        mvn install -q -DskipTests
+
     - name: Generate Maven Central index
       run: |
         echo "Starting Maven Central index generation..."

@@ -9,6 +9,7 @@ import org.junit.Assume;
 import org.junit.Test;
 
 import java.io.IOException;
+import java.net.URISyntaxException;
 import java.util.List;
 
 import static org.junit.Assert.*;
@@ -86,14 +87,14 @@ public class ArtifactDownloaderTest
     }
 
     @Test
-    public void testGetJarSha1() throws IOException {
+    public void testGetJarSha1() throws IOException, URISyntaxException {
         assertEquals("85f79121fdaabcbcac085d0d4aad34af9f8dbba2",
                 ArtifactDownloader.getJarSha1("https://repo1.maven.org/maven2",
                         new ArtifactInfo("central", "org.springframework.boot", "spring-boot-starter-web", "2.3.2.RELEASE", null, "jar")));
     }
 
     @Test(expected = IOException.class)
-    public void testGetJarSha1ThrowsException() throws IOException {
+    public void testGetJarSha1ThrowsException() throws IOException, URISyntaxException {
         ArtifactDownloader.getJarSha1("http://repo1.maven.org/maven2", new ArtifactInfo("central", "org.springframework.boot", "spring-boot-starter-web", "2.3.2.RELEASE", null, "jar"));
     }
 
