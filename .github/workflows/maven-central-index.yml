@@ -65,36 +65,17 @@ jobs:
         echo "OUTPUT_FILE=${REPO_ID}-${DATE}.archive-metadata.txt" >> $GITHUB_ENV
         echo "COMPRESSED_FILE=${REPO_ID}-${DATE}.archive-metadata.txt.gz" >> $GITHUB_ENV
         
-    - name: Build JAR file
-      run: |
-        echo "Building JAR file..."
-        mvn package -DskipTests
-        
-        echo "=== Available JAR files ==="
-        find . -name "*.jar" -type f | grep -v "/original-" | head -10
-        
     - name: Generate Maven Central index
       run: |
         echo "Starting Maven Central index generation..."
         echo "Repository: $REPO_URL"
         echo "Output will be: $OUTPUT_FILE"
         
-        # Find the JAR file
-        JAR_FILE=$(find ./indexer/target -name "nexus-indexer-*.jar" -not -name "*-sources.jar" | head -1)
-        if [ -z "$JAR_FILE" ]; then
-          echo "❌ JAR file not found!"
-          echo "Available files in indexer/target:"
-          ls -la ./indexer/target/
-          exit 1
-        fi
-        
-        echo "✅ Found JAR file: $JAR_FILE"
-        
-        # Run directly with java -jar
-        java -Djava.util.concurrent.ForkJoinPool.common.parallelism=8 \
-             -Xmx4G \
-             -jar "$JAR_FILE" \
-             TEXT "$REPO_ID" "$REPO_URL" /tmp/maven-index-output /tmp/maven-index-cache
+        mvn exec:java \
+          -pl indexer \
+          -Djava.util.concurrent.ForkJoinPool.common.parallelism=8 \
+          -Dexec.mainClass="org.jboss.windup.maven.nexusindexer.GenerateMetadataFile" \
+          -Dexec.args="TEXT $REPO_ID $REPO_URL /tmp/maven-index-output /tmp/maven-index-cache"
           
     - name: Clean up Maven cache
       run: |
