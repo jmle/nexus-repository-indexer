@@ -95,10 +95,37 @@ jobs:
         df -h
         echo "=========================="
         
+    - name: Debug Java environment thoroughly
+      run: |
+        echo "=== Complete Java Environment Debug ==="
+        echo "JAVA_HOME: '$JAVA_HOME'"
+        echo "PATH: '$PATH'"
+        echo "which java: $(which java)"
+        echo "readlink java: $(readlink -f $(which java))"
+        echo "java -version:"
+        java -version
+        echo ""
+        echo "which mvn: $(which mvn)"
+        echo "mvn -version:"
+        mvn -version || echo "Maven version failed!"
+        echo ""
+        echo "Java installations on system:"
+        find /usr -name "java" -type f 2>/dev/null | head -5
+        find /opt -name "java" -type f 2>/dev/null | head -5
+        echo ""
+        echo "Environment variables with 'JAVA':"
+        env | grep -i java || echo "No JAVA env vars found"
+        
     - name: Build JAR file
+      env:
+        JAVA_HOME: ${{ env.JAVA_HOME }}
       run: |
         echo "Building JAR file..."
-        mvn package -DskipTests
+        echo "Using JAVA_HOME: $JAVA_HOME"
+        echo "Using Java: $(which java)"
+        
+        # Try with explicit JAVA_HOME
+        MAVEN_OPTS="-Djava.home=$JAVA_HOME" mvn package -DskipTests
         
         echo "=== Available JAR files ==="
         find . -name "*.jar" -type f | grep -v "/original-" | head -10
