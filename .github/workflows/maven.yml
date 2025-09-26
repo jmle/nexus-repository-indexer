@@ -9,6 +9,7 @@ on:
     # * is a special character in YAML so you have to quote this string
     # added the daily cron in the middle of the night, avoiding midnight
     - cron:  '11 3 * * *'
+  workflow_dispatch:
 
 jobs:
   build:
